@@ -56,4 +56,8 @@ fn main() {
     }
 
     println!("{:?}", summary);
+
+    if summary.failed_count > 0 {
+        process::exit(1);
+    }
 }
