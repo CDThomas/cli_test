@@ -19,6 +19,13 @@ struct Summary {
     failed_count: u32,
 }
 
+// TODO:
+// - Split logic out of main into lib
+// - Replace unwrap with proper error hanlding
+// - Add tests
+// - Add expecting stderr and error code
+// - Prettier test output
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
@@ -46,10 +53,10 @@ fn main() {
         let stdout = String::from_utf8(output.stdout).unwrap();
 
         if stdout.eq(&test.out) {
-            println!("Pass ✅");
+            println!("✅ Pass");
             summary.passed_count += 1;
         } else {
-            println!("Fail ❌");
+            println!("❌ Fail");
             summary.failed_count += 1;
         }
 
