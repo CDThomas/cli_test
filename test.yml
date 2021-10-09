@@ -1,0 +1,8 @@
+- test: Passing test
+  in: echo "Hello world"
+  out: |
+    Hello world
+- test: Failing test
+  in: echo "This will fail"
+  out: |
+    Fail
