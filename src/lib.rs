@@ -2,6 +2,7 @@ use std::error::Error;
 use std::fs;
 use std::process::Command;
 
+use ansi_term::{Colour, Style};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -26,7 +27,8 @@ pub enum TestState {
 // TODO:
 // - Add tests
 // - Add expecting stderr and error code
-// - Prettier test output
+// - Print failure details
+// - Before/after each/all hooks
 
 pub fn run(filename: String) -> Result<TestState, Box<dyn Error>> {
     let tests = parse(&filename)?;
@@ -75,12 +77,23 @@ fn run_test(test: &Test, summary: &mut Summary) -> Result<(), Box<dyn Error>> {
 
 fn report_test(_test: &Test, did_pass: bool) {
     if did_pass {
-        println!("✅ Pass");
+        print!("{}", Colour::Green.paint("."));
     } else {
-        println!("❌ Fail");
+        print!("{}", Colour::Red.paint("F"));
     }
 }
 
 fn report_summary(summary: &Summary) {
-    println!("{:?}", summary);
+    let label_text = Style::new().bold().paint("Tests:");
+    let passed_text = Colour::Green.paint(format!("{} passed", summary.passed_count));
+    let failed_text = Colour::Red.paint(format!("{} failed", summary.failed_count));
+    let total_text = format!("{} total", summary.passed_count + summary.failed_count);
+
+    println!("\n");
+
+    if summary.failed_count > 0 {
+        println!("{} {}, {}, {}", label_text, passed_text, failed_text, total_text);
+    } else {
+        println!("{} {}, {}", label_text, passed_text, total_text);
+    }
 }
