@@ -1,5 +1,4 @@
 use std::error::Error;
-use std::fmt;
 use std::fs;
 use std::process::Command;
 
@@ -19,23 +18,17 @@ struct Summary {
     failed_count: u32,
 }
 
+pub enum TestState {
+    Passed,
+    Failed,
+}
+
 // TODO:
 // - Add tests
 // - Add expecting stderr and error code
 // - Prettier test output
 
-#[derive(Debug, Clone)]
-pub struct CliTestError;
-
-impl fmt::Display for CliTestError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "tests failed")
-    }
-}
-
-impl Error for CliTestError {}
-
-pub fn run(filename: String) -> Result<(), Box<dyn Error>> {
+pub fn run(filename: String) -> Result<TestState, Box<dyn Error>> {
     let tests = parse(&filename)?;
 
     let mut summary = Summary { passed_count: 0, failed_count: 0};
@@ -61,10 +54,10 @@ pub fn run(filename: String) -> Result<(), Box<dyn Error>> {
     println!("{:?}", summary);
 
     if summary.failed_count > 0 {
-        return Err(CliTestError.into());
+        return Ok(TestState::Failed);
     }
 
-    Ok(())
+    Ok(TestState::Passed)
 }
 
 fn parse(filename: &str) -> Result<Vec<Test>, Box<dyn Error>> {

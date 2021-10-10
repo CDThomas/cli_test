@@ -11,12 +11,13 @@ fn main() {
 
     let filename = args[1].clone();
 
-    if let Err(e) = cli_test::run(filename) {
-        // How can I match on the boxed error here?
-        // Is it better to return a specific error type rather than Box<dyn Error>
-        // if I want to match on a specific error type?
-        eprintln!("{}", e);
-        process::exit(1);
+    match cli_test::run(filename) {
+        Ok(cli_test::TestState::Passed) => (),
+        Ok(cli_test::TestState::Failed) => process::exit(1),
+        Err(e) => {
+            eprintln!("{}", e);
+            process::exit(1);
+        }
     }
 }
 
