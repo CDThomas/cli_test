@@ -34,30 +34,15 @@ pub fn run(filename: String) -> Result<TestState, Box<dyn Error>> {
     let mut summary = Summary { passed_count: 0, failed_count: 0};
 
     for test in tests {
-        let output = Command::new("bash")
-            .arg("-c")
-            .arg(test.input)
-            .output()?;
-
-        let stdout = String::from_utf8(output.stdout)?;
-
-        if stdout.eq(&test.out) {
-            println!("✅ Pass");
-            summary.passed_count += 1;
-        } else {
-            println!("❌ Fail");
-            summary.failed_count += 1;
-        }
-
+        run_test(&test, &mut summary)?;
     }
 
-    println!("{:?}", summary);
+    report_summary(&summary);
 
-    if summary.failed_count > 0 {
-        return Ok(TestState::Failed);
+    match summary.failed_count {
+        0 => Ok(TestState::Passed),
+        _ => Ok(TestState::Failed),
     }
-
-    Ok(TestState::Passed)
 }
 
 fn parse(filename: &str) -> Result<Vec<Test>, Box<dyn Error>> {
@@ -65,4 +50,37 @@ fn parse(filename: &str) -> Result<Vec<Test>, Box<dyn Error>> {
     let tests: Vec<Test> = serde_yaml::from_str(&contents)?;
 
     Ok(tests)
+}
+
+fn run_test(test: &Test, summary: &mut Summary) -> Result<(), Box<dyn Error>> {
+    let output = Command::new("bash")
+        .arg("-c")
+        .arg(&test.input)
+        .output()?;
+
+    let stdout = String::from_utf8(output.stdout)?;
+
+    let did_pass = stdout.eq(&test.out);
+
+    report_test(&test, did_pass);
+
+    if did_pass {
+        summary.passed_count += 1;
+    } else {
+        summary.failed_count += 1;
+    }
+
+    Ok(())
+}
+
+fn report_test(_test: &Test, did_pass: bool) {
+    if did_pass {
+        println!("✅ Pass");
+    } else {
+        println!("❌ Fail");
+    }
+}
+
+fn report_summary(summary: &Summary) {
+    println!("{:?}", summary);
 }
