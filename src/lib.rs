@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 #[derive(Clone, Debug, Deserialize)]
 struct Test {
-    #[serde(alias = "in")]
+    #[serde(rename = "in")]
     input: String,
     out: String,
     test: String,
