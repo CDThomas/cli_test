@@ -46,8 +46,7 @@ pub fn run(filename: String) -> Result<TestState, Box<dyn Error>> {
         run_test(&test, &mut summary, &mut failures)?;
     }
 
-    report_failures(&failures);
-    report_summary(&summary);
+    report_summary(&summary, &failures);
 
     match summary.failed_count {
         0 => Ok(TestState::Passed),
@@ -101,7 +100,7 @@ fn report_test(_test: &Test, did_pass: bool) {
     }
 }
 
-fn report_summary(summary: &Summary) {
+fn report_summary(summary: &Summary, failures: &Vec<Failure>) {
     let label_text = Style::new().bold().paint("Tests:");
     let passed_text = Colour::Green.paint(format!("{} passed", summary.passed_count));
     let failed_text = Colour::Red.paint(format!("{} failed", summary.failed_count));
@@ -111,6 +110,8 @@ fn report_summary(summary: &Summary) {
 
     if summary.failed_count > 0 {
         println!("{} {}, {}, {}", label_text, passed_text, failed_text, total_text);
+
+        report_failures(failures);
     } else {
         println!("{} {}, {}", label_text, passed_text, total_text);
     }
