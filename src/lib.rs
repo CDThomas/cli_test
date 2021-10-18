@@ -1,6 +1,8 @@
-use std::error::Error;
+use std::fmt;
 use std::fs;
+use std::io;
 use std::process::Command;
+use std::string;
 
 use ansi_term::{Colour, Style};
 use serde::Deserialize;
@@ -29,13 +31,47 @@ pub enum TestState {
     Failed,
 }
 
+pub enum CliError {
+    Io(io::Error),
+    Yaml(serde_yaml::Error),
+    Utf8(string::FromUtf8Error)
+}
+
+impl fmt::Display for CliError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            CliError::Io(ref err) => err.fmt(f),
+            CliError::Yaml(ref err) => err.fmt(f),
+            CliError::Utf8(ref err) => err.fmt(f),
+        }
+    }
+}
+
+impl From<io::Error> for CliError {
+    fn from(err: io::Error) -> CliError {
+        CliError::Io(err)
+    }
+}
+
+impl From<serde_yaml::Error> for CliError {
+    fn from(err: serde_yaml::Error) -> CliError {
+        CliError::Yaml(err)
+    }
+}
+
+impl From<string::FromUtf8Error> for CliError {
+    fn from(err: string::FromUtf8Error) -> CliError {
+        CliError::Utf8(err)
+    }
+}
+
 // TODO:
 // - Add tests
 // - Add expecting stderr and error code
 // - Before/after each/all hooks
 // - Verify that test names are unique
 
-pub fn run(filename: String) -> Result<TestState, Box<dyn Error>> {
+pub fn run(filename: String) -> Result<TestState, CliError> {
     let tests = parse(&filename)?;
 
     let mut summary = Summary { passed_count: 0, failed_count: 0};
@@ -54,14 +90,14 @@ pub fn run(filename: String) -> Result<TestState, Box<dyn Error>> {
     }
 }
 
-fn parse(filename: &str) -> Result<Vec<Test>, Box<dyn Error>> {
+fn parse(filename: &str) -> Result<Vec<Test>, CliError> {
     let contents = fs::read_to_string(filename)?;
     let tests: Vec<Test> = serde_yaml::from_str(&contents)?;
 
     Ok(tests)
 }
 
-fn run_test(test: &Test, summary: &mut Summary, failures: &mut Vec<Failure>) -> Result<(), Box<dyn Error>> {
+fn run_test(test: &Test, summary: &mut Summary, failures: &mut Vec<Failure>) -> Result<(), CliError> {
     let output = Command::new("bash")
         .arg("-c")
         .arg(&test.input)
