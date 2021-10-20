@@ -7,6 +7,15 @@ use std::string;
 use ansi_term::{Colour, Style};
 use serde::Deserialize;
 
+const SPACES_PER_INDENT_LEVEL: usize = 2;
+
+#[derive(Clone, Copy)]
+enum IndentLevel {
+    TestName = 1,
+    FailureMessage,
+    FailureDiff,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 struct Test {
     #[serde(rename = "in")]
@@ -17,7 +26,78 @@ struct Test {
 
 struct Failure {
     test: Test,
-    messages: Vec<String>
+    failed_expectations: Vec<Expectation>,
+}
+
+impl fmt::Display for Failure {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for expectation in &self.failed_expectations {
+            expectation.fmt(f)?;
+        }
+
+        return Ok(());
+    }
+}
+
+enum Expectation {
+    StdOut(StdOutExpectation),
+}
+
+struct StdOutExpectation {
+    expected_stdout: String,
+    actual_stdout: String,
+}
+
+impl fmt::Display for Expectation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Expectation::StdOut(ref expectation) => {
+                let expected_text =
+                    format!("{}", Colour::Green.paint(&expectation.expected_stdout));
+                let actual_text = format!("{}", Colour::Red.paint(&expectation.actual_stdout));
+
+                write!(
+                    f,
+                    "{}",
+                    indent_line("Unexpected output on stdout.", IndentLevel::FailureMessage)
+                )?;
+
+                write!(f, "\n\n")?;
+
+                write!(
+                    f,
+                    "{}",
+                    indent_line("Expected:", IndentLevel::FailureMessage)
+                )?;
+
+                write!(f, "\n\n")?;
+
+                write!(
+                    f,
+                    "{}",
+                    indent_lines(&expected_text, IndentLevel::FailureDiff),
+                )?;
+
+                write!(f, "\n")?;
+
+                write!(
+                    f,
+                    "{}",
+                    indent_line("Received:", IndentLevel::FailureMessage)
+                )?;
+
+                write!(f, "\n\n")?;
+
+                write!(
+                    f,
+                    "{}",
+                    indent_lines(&actual_text, IndentLevel::FailureDiff),
+                )?;
+
+                write!(f, "\n")
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -34,7 +114,7 @@ pub enum TestState {
 pub enum CliError {
     Io(io::Error),
     Yaml(serde_yaml::Error),
-    Utf8(string::FromUtf8Error)
+    Utf8(string::FromUtf8Error),
 }
 
 impl fmt::Display for CliError {
@@ -74,7 +154,10 @@ impl From<string::FromUtf8Error> for CliError {
 pub fn run(filename: String) -> Result<TestState, CliError> {
     let tests = parse(&filename)?;
 
-    let mut summary = Summary { passed_count: 0, failed_count: 0};
+    let mut summary = Summary {
+        passed_count: 0,
+        failed_count: 0,
+    };
 
     let mut failures: Vec<Failure> = Vec::new();
 
@@ -97,11 +180,12 @@ fn parse(filename: &str) -> Result<Vec<Test>, CliError> {
     Ok(tests)
 }
 
-fn run_test(test: &Test, summary: &mut Summary, failures: &mut Vec<Failure>) -> Result<(), CliError> {
-    let output = Command::new("bash")
-        .arg("-c")
-        .arg(&test.input)
-        .output()?;
+fn run_test(
+    test: &Test,
+    summary: &mut Summary,
+    failures: &mut Vec<Failure>,
+) -> Result<(), CliError> {
+    let output = Command::new("bash").arg("-c").arg(&test.input).output()?;
 
     let stdout = String::from_utf8(output.stdout)?;
 
@@ -112,16 +196,14 @@ fn run_test(test: &Test, summary: &mut Summary, failures: &mut Vec<Failure>) -> 
     if did_pass {
         summary.passed_count += 1;
     } else {
-        let expected_text = format!("{}", Colour::Green.paint(&test.out));
-        let actual_text = format!("{}", Colour::Red.paint(&stdout));
+        failures.push(Failure {
+            test: test.clone(),
+            failed_expectations: vec![Expectation::StdOut(StdOutExpectation {
+                actual_stdout: stdout,
+                expected_stdout: test.out.clone(),
+            })],
+        });
 
-        let message = format!(
-            "Unexpected output on stdout.\n\nExpected:\n\n{}\n\nReceived:\n\n{}\n",
-            pad_lines(&expected_text, 2),
-            pad_lines(&actual_text, 2),
-        );
-
-        failures.push(Failure { test: test.clone(), messages: vec![message]});
         summary.failed_count += 1;
     }
 
@@ -142,10 +224,13 @@ fn report_summary(summary: &Summary, failures: &Vec<Failure>) {
     let failed_text = Colour::Red.paint(format!("{} failed", summary.failed_count));
     let total_text = format!("{} total", summary.passed_count + summary.failed_count);
 
-    println!("");
+    print!("\n\n");
 
     if summary.failed_count > 0 {
-        println!("{} {}, {}, {}", label_text, passed_text, failed_text, total_text);
+        println!(
+            "{} {}, {}, {}",
+            label_text, passed_text, failed_text, total_text
+        );
 
         report_failures(failures);
     } else {
@@ -168,19 +253,22 @@ fn report_failures(failures: &Vec<Failure>) {
 }
 
 fn report_failure(i: usize, failure: &Failure) {
-    println!("  {}) {}", i, Colour::Red.paint(&failure.test.test));
-
-    for message in &failure.messages {
-        println!("\n{}", pad_lines(message, 4));
-    }
+    let failure_heading = format!("{}) {}", i, Colour::Red.paint(&failure.test.test));
+    println!("{}", indent_line(&failure_heading, IndentLevel::TestName));
+    println!("\n{}", failure);
 }
 
-fn pad_lines(message: &str, padding: usize) -> String {
-    let mut padded: Vec<String> = Vec::new();
+fn indent_lines(message: &str, indent_level: IndentLevel) -> String {
+    let mut indented: Vec<String> = Vec::new();
 
     for line in message.lines() {
-        padded.push(format!("{}{}", " ".repeat(padding), line));
+        indented.push(indent_line(line, indent_level));
     }
 
-    padded.join("\n")
+    indented.join("\n")
+}
+
+fn indent_line(line: &str, indent_level: IndentLevel) -> String {
+    let padding = " ".repeat(indent_level as usize * SPACES_PER_INDENT_LEVEL);
+    format!("{}{}", padding, line)
 }
