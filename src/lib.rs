@@ -7,26 +7,18 @@ use std::string;
 use ansi_term::{Colour, Style};
 use serde::Deserialize;
 
-const SPACES_PER_INDENT_LEVEL: usize = 2;
-
-#[derive(Clone, Copy)]
-enum IndentLevel {
-    TestName = 1,
-    FailureMessage,
-    FailureDiff,
-}
-
 #[derive(Clone, Debug, Deserialize)]
 struct Test {
+    #[serde(rename = "test")]
+    name: String,
     #[serde(rename = "in")]
     input: String,
     out: String,
-    test: String,
 }
 
 struct Failure {
-    test: Test,
-    failed_expectations: Vec<Expectation>,
+    name: String,
+    failed_expectations: Vec<FailedExpectation>,
 }
 
 impl fmt::Display for Failure {
@@ -39,62 +31,33 @@ impl fmt::Display for Failure {
     }
 }
 
-enum Expectation {
-    StdOut(StdOutExpectation),
+enum FailedExpectation {
+    StdOut(Expectation),
 }
 
-struct StdOutExpectation {
-    expected_stdout: String,
-    actual_stdout: String,
+struct Expectation {
+    expected: String,
+    actual: String,
 }
 
-impl fmt::Display for Expectation {
+impl fmt::Display for FailedExpectation {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Expectation::StdOut(ref expectation) => {
-                let expected_text =
-                    format!("{}", Colour::Green.paint(&expectation.expected_stdout));
-                let actual_text = format!("{}", Colour::Red.paint(&expectation.actual_stdout));
-
+            FailedExpectation::StdOut(ref expectation) => {
                 write!(
                     f,
-                    "{}",
-                    indent_line("Unexpected output on stdout.", IndentLevel::FailureMessage)
-                )?;
-
-                write!(f, "\n\n")?;
-
-                write!(
-                    f,
-                    "{}",
-                    indent_line("Expected:", IndentLevel::FailureMessage)
-                )?;
-
-                write!(f, "\n\n")?;
-
-                write!(
-                    f,
-                    "{}",
-                    indent_lines(&expected_text, IndentLevel::FailureDiff),
-                )?;
-
-                write!(f, "\n")?;
-
-                write!(
-                    f,
-                    "{}",
-                    indent_line("Received:", IndentLevel::FailureMessage)
-                )?;
-
-                write!(f, "\n\n")?;
-
-                write!(
-                    f,
-                    "{}",
-                    indent_lines(&actual_text, IndentLevel::FailureDiff),
-                )?;
-
-                write!(f, "\n")
+                    "    Unexpected output on stdout.\n\
+                    \n\
+                    \x20   Expected:\n\
+                    \n\
+                    \x20     {}\n\
+                    \n\
+                    \x20   Received:\n\
+                    \n\
+                    \x20     {}\n",
+                    Colour::Green.paint(&expectation.expected),
+                    Colour::Red.paint(&expectation.actual)
+                )
             }
         }
     }
@@ -162,7 +125,7 @@ pub fn run(filename: String) -> Result<TestState, CliError> {
     let mut failures: Vec<Failure> = Vec::new();
 
     for test in tests {
-        run_test(&test, &mut summary, &mut failures)?;
+        run_test(test, &mut summary, &mut failures)?;
     }
 
     report_summary(&summary, &failures);
@@ -181,7 +144,7 @@ fn parse(filename: &str) -> Result<Vec<Test>, CliError> {
 }
 
 fn run_test(
-    test: &Test,
+    test: Test,
     summary: &mut Summary,
     failures: &mut Vec<Failure>,
 ) -> Result<(), CliError> {
@@ -197,10 +160,10 @@ fn run_test(
         summary.passed_count += 1;
     } else {
         failures.push(Failure {
-            test: test.clone(),
-            failed_expectations: vec![Expectation::StdOut(StdOutExpectation {
-                actual_stdout: stdout,
-                expected_stdout: test.out.clone(),
+            name: test.name,
+            failed_expectations: vec![FailedExpectation::StdOut(Expectation {
+                actual: stdout,
+                expected: test.out,
             })],
         });
 
@@ -243,9 +206,7 @@ fn report_failures(failures: &Vec<Failure>) {
         return;
     }
 
-    println!("\n");
-    println!("{}", Style::new().bold().paint("Failures:"));
-    println!("");
+    print!("\n{}\n\n", Style::new().bold().paint("Failures:"));
 
     for (i, failure) in failures.iter().enumerate() {
         report_failure(i + 1, &failure);
@@ -253,22 +214,6 @@ fn report_failures(failures: &Vec<Failure>) {
 }
 
 fn report_failure(i: usize, failure: &Failure) {
-    let failure_heading = format!("{}) {}", i, Colour::Red.paint(&failure.test.test));
-    println!("{}", indent_line(&failure_heading, IndentLevel::TestName));
-    println!("\n{}", failure);
-}
-
-fn indent_lines(message: &str, indent_level: IndentLevel) -> String {
-    let mut indented: Vec<String> = Vec::new();
-
-    for line in message.lines() {
-        indented.push(indent_line(line, indent_level));
-    }
-
-    indented.join("\n")
-}
-
-fn indent_line(line: &str, indent_level: IndentLevel) -> String {
-    let padding = " ".repeat(indent_level as usize * SPACES_PER_INDENT_LEVEL);
-    format!("{}{}", padding, line)
+    print!("  {}) {}\n\n", i, Colour::Red.paint(&failure.name));
+    print!("{}", failure);
 }
