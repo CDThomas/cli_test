@@ -6,3 +6,21 @@
   in: echo "This will fail"
   out: |
     Fail
+- test: Another failing test
+  in: echo "This will fail"
+  out: |
+    Fail
+- test: Exit code passing
+  in: exit 1
+  exit_code: 1
+- test: Exit code failing
+  in: exit 1
+  exit_code: 2
+- test: stderr passing
+  in: ">&2 echo \"error\""
+  err: |
+    error
+- test: stderr failing
+  in: ">&2 echo \"error\""
+  err: |
+    different error
