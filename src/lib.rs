@@ -18,11 +18,19 @@ struct Test {
 
 struct Failure {
     name: String,
+    failure_number: usize,
     failed_expectations: Vec<FailedExpectation>,
 }
 
 impl fmt::Display for Failure {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "  {}) {}\n\n",
+            self.failure_number,
+            Colour::Red.paint(&self.name)
+        )?;
+
         for expectation in &self.failed_expectations {
             expectation.fmt(f)?;
         }
@@ -31,13 +39,13 @@ impl fmt::Display for Failure {
     }
 }
 
-enum FailedExpectation {
-    StdOut(Expectation),
-}
-
 struct Expectation {
     expected: String,
     actual: String,
+}
+
+enum FailedExpectation {
+    StdOut(Expectation),
 }
 
 impl fmt::Display for FailedExpectation {
@@ -67,6 +75,25 @@ impl fmt::Display for FailedExpectation {
 struct Summary {
     passed_count: usize,
     failed_count: usize,
+}
+
+impl fmt::Display for Summary {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let label_text = Style::new().bold().paint("Tests:");
+        let passed_text = Colour::Green.paint(format!("{} passed", self.passed_count));
+        let failed_text = Colour::Red.paint(format!("{} failed", self.failed_count));
+        let total_text = format!("{} total", self.passed_count + self.failed_count);
+
+        if self.failed_count > 0 {
+            writeln!(
+                f,
+                "{} {}, {}, {}",
+                label_text, passed_text, failed_text, total_text
+            )
+        } else {
+            writeln!(f, "{} {}, {}", label_text, passed_text, total_text)
+        }
+    }
 }
 
 pub enum TestState {
@@ -152,68 +179,42 @@ fn run_test(
 
     let stdout = String::from_utf8(output.stdout)?;
 
-    let did_pass = stdout.eq(&test.out);
-
-    report_test(&test, did_pass);
-
-    if did_pass {
+    if stdout.eq(&test.out) {
+        report_test_passed();
         summary.passed_count += 1;
     } else {
+        report_test_failed();
+        summary.failed_count += 1;
+
         failures.push(Failure {
             name: test.name,
+            failure_number: summary.failed_count,
             failed_expectations: vec![FailedExpectation::StdOut(Expectation {
                 actual: stdout,
                 expected: test.out,
             })],
         });
-
-        summary.failed_count += 1;
     }
 
     Ok(())
 }
 
-fn report_test(_test: &Test, did_pass: bool) {
-    if did_pass {
-        print!("{}", Colour::Green.paint("."));
-    } else {
-        print!("{}", Colour::Red.paint("F"));
-    }
+fn report_test_passed() {
+    print!("{}", Colour::Green.paint("."));
+}
+
+fn report_test_failed() {
+    print!("{}", Colour::Red.paint("F"));
 }
 
 fn report_summary(summary: &Summary, failures: &Vec<Failure>) {
-    let label_text = Style::new().bold().paint("Tests:");
-    let passed_text = Colour::Green.paint(format!("{} passed", summary.passed_count));
-    let failed_text = Colour::Red.paint(format!("{} failed", summary.failed_count));
-    let total_text = format!("{} total", summary.passed_count + summary.failed_count);
+    print!("\n\n{}", summary);
 
-    print!("\n\n");
+    if failures.len() > 0 {
+        print!("\n{}\n\n", Style::new().bold().paint("Failures:"));
 
-    if summary.failed_count > 0 {
-        println!(
-            "{} {}, {}, {}",
-            label_text, passed_text, failed_text, total_text
-        );
-
-        report_failures(failures);
-    } else {
-        println!("{} {}, {}", label_text, passed_text, total_text);
+        for failure in failures.iter() {
+            print!("{}", failure);
+        }
     }
-}
-
-fn report_failures(failures: &Vec<Failure>) {
-    if failures.len() == 0 {
-        return;
-    }
-
-    print!("\n{}\n\n", Style::new().bold().paint("Failures:"));
-
-    for (i, failure) in failures.iter().enumerate() {
-        report_failure(i + 1, &failure);
-    }
-}
-
-fn report_failure(i: usize, failure: &Failure) {
-    print!("  {}) {}\n\n", i, Colour::Red.paint(&failure.name));
-    print!("{}", failure);
 }
