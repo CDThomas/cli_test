@@ -133,10 +133,25 @@ pub enum TestState {
     Failed,
 }
 
+pub enum ValidationError {
+    MissingExitCode,
+}
+
+impl fmt::Display for ValidationError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            ValidationError::MissingExitCode => {
+                write!(f, "expected output on stderr but no exit code specified.")
+            }
+        }
+    }
+}
+
 pub enum CliError {
     Io(io::Error),
     Yaml(serde_yaml::Error),
     Utf8(string::FromUtf8Error),
+    Validation(ValidationError),
 }
 
 impl fmt::Display for CliError {
@@ -147,6 +162,10 @@ impl fmt::Display for CliError {
             CliError::Io(ref err) => err.fmt(f),
             CliError::Yaml(ref err) => err.fmt(f),
             CliError::Utf8(ref err) => err.fmt(f),
+            CliError::Validation(ref err) => {
+                write!(f, "validation error: ")?;
+                err.fmt(f)
+            }
         }
     }
 }
@@ -177,6 +196,8 @@ impl From<string::FromUtf8Error> for CliError {
 
 pub fn run(filename: String) -> Result<TestState, CliError> {
     let tests = parse(&filename)?;
+
+    // TODO: validate that test names are unique
 
     let mut test_counts = TestCounts {
         passed: 0,
@@ -213,6 +234,10 @@ fn run_test(
 
     let mut failed_expectations: Vec<FailedExpectation> = Vec::new();
 
+    // TODO: make this a failure for the individual test rather than causing all
+    // tests to crash.
+    validate_test(&test)?;
+
     let stdout = String::from_utf8(output.stdout)?;
 
     if let Some(expected_out) = test.out {
@@ -226,6 +251,7 @@ fn run_test(
 
     let stderr = String::from_utf8(output.stderr)?;
 
+    // TODO: get expected stderr
     if let Some(expected_err) = test.err {
         if stderr.ne(&expected_err) {
             failed_expectations.push(FailedExpectation::StdErr(Expectation {
@@ -235,6 +261,7 @@ fn run_test(
         }
     }
 
+    // TODO: get expected exit code
     if let Some(expected_exit) = test.exit_code {
         // TODO: remove unwrap
         let actual_exit_code = output.status.code().unwrap();
@@ -262,6 +289,17 @@ fn run_test(
     }
 
     Ok(())
+}
+
+fn validate_test(test: &Test) -> Result<(), CliError> {
+    match test {
+        Test {
+            err: Some(_),
+            exit_code: None,
+            ..
+        } => Err(CliError::Validation(ValidationError::MissingExitCode)),
+        _ => Ok(()),
+    }
 }
 
 fn report_test_passed() {

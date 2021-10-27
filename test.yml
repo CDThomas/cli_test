@@ -20,7 +20,9 @@
   in: ">&2 echo \"error\""
   err: |
     error
+  exit_code: 0
 - test: stderr failing
   in: ">&2 echo \"error\""
   err: |
     different error
+  exit_code: 0
