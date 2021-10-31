@@ -232,47 +232,11 @@ fn run_test(
 ) -> Result<(), CliError> {
     let output = Command::new("bash").arg("-c").arg(&test.input).output()?;
 
-    let mut failed_expectations: Vec<FailedExpectation> = Vec::new();
-
     // TODO: make this a failure for the individual test rather than causing all
     // tests to crash.
     validate_test(&test)?;
 
-    let stdout = String::from_utf8(output.stdout)?;
-
-    if let Some(expected_out) = test.out {
-        if stdout.ne(&expected_out) {
-            failed_expectations.push(FailedExpectation::StdOut(Expectation {
-                actual: stdout,
-                expected: expected_out,
-            }))
-        }
-    }
-
-    let stderr = String::from_utf8(output.stderr)?;
-
-    // TODO: get expected stderr
-    if let Some(expected_err) = test.err {
-        if stderr.ne(&expected_err) {
-            failed_expectations.push(FailedExpectation::StdErr(Expectation {
-                actual: stderr,
-                expected: expected_err,
-            }))
-        }
-    }
-
-    // TODO: get expected exit code
-    if let Some(expected_exit) = test.exit_code {
-        // TODO: remove unwrap
-        let actual_exit_code = output.status.code().unwrap();
-
-        if expected_exit != actual_exit_code {
-            failed_expectations.push(FailedExpectation::ExitCode(Expectation {
-                actual: actual_exit_code,
-                expected: expected_exit,
-            }))
-        }
-    }
+    let failed_expectations = verify_expectations(&test, output)?;
 
     if failed_expectations.len() == 0 {
         report_test_passed();
@@ -291,6 +255,74 @@ fn run_test(
     Ok(())
 }
 
+fn verify_expectations(
+    test: &Test,
+    output: std::process::Output,
+) -> Result<Vec<FailedExpectation>, CliError> {
+    let mut failed_expectations: Vec<FailedExpectation> = Vec::new();
+
+    let stdout = String::from_utf8(output.stdout)?;
+    let stderr = String::from_utf8(output.stderr)?;
+    // TODO: remove unwrap;
+    let exit_code = output.status.code().unwrap();
+
+    if let Some(failed_expectation) = verify_stdout(&test, &stdout) {
+        failed_expectations.push(failed_expectation);
+    }
+
+    if let Some(failed_expectation) = verify_stderr(&test, &stderr) {
+        failed_expectations.push(failed_expectation);
+    }
+
+    if let Some(failed_expectation) = verify_exit_code(&test, exit_code) {
+        failed_expectations.push(failed_expectation);
+    }
+
+    return Ok(failed_expectations);
+}
+
+fn verify_stdout(test: &Test, stdout: &str) -> Option<FailedExpectation> {
+    if let Some(expected_out) = &test.out {
+        if stdout.ne(expected_out) {
+            return Some(FailedExpectation::StdOut(Expectation {
+                actual: stdout.to_string(),
+                expected: expected_out.to_string(),
+            }));
+        }
+    }
+
+    return None;
+}
+
+fn verify_stderr(test: &Test, stderr: &str) -> Option<FailedExpectation> {
+    // TODO: get expected stderr
+    if let Some(expected_err) = &test.err {
+        if stderr.ne(expected_err) {
+            return Some(FailedExpectation::StdErr(Expectation {
+                actual: stderr.to_string(),
+                expected: expected_err.to_string(),
+            }));
+        }
+    }
+
+    return None;
+}
+
+fn verify_exit_code(test: &Test, exit_code: i32) -> Option<FailedExpectation> {
+    // TODO: get expected exit code
+    if let Some(expected_exit) = test.exit_code {
+        if expected_exit != exit_code {
+            return Some(FailedExpectation::ExitCode(Expectation {
+                actual: exit_code,
+                expected: expected_exit,
+            }));
+        }
+    }
+
+    return None;
+}
+
+// TODO: move this into verify_exit_code instead
 fn validate_test(test: &Test) -> Result<(), CliError> {
     match test {
         Test {
