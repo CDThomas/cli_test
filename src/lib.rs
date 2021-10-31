@@ -1,14 +1,15 @@
 use std::fmt;
 use std::fs;
-use std::io;
 use std::process::Command;
-use std::string;
 
 use ansi_term::{Colour, Style};
 use serde::Deserialize;
 
+mod errors;
+mod expectations;
+
 #[derive(Clone, Debug, Deserialize)]
-struct Test {
+pub struct Test {
     #[serde(rename = "test")]
     name: String,
     #[serde(rename = "in")]
@@ -21,7 +22,7 @@ struct Test {
 struct Failure {
     name: String,
     failure_number: usize,
-    failed_expectations: Vec<FailedExpectation>,
+    failed_expectations: Vec<expectations::FailedExpectation>,
 }
 
 impl fmt::Display for Failure {
@@ -38,68 +39,6 @@ impl fmt::Display for Failure {
         }
 
         return Ok(());
-    }
-}
-
-struct Expectation<T> {
-    expected: T,
-    actual: T,
-}
-
-enum FailedExpectation {
-    StdOut(Expectation<String>),
-    StdErr(Expectation<String>),
-    ExitCode(Expectation<i32>),
-}
-
-impl fmt::Display for FailedExpectation {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            FailedExpectation::StdOut(ref expectation) => {
-                write!(
-                    f,
-                    "    Unexpected output on stdout.\n\
-                    \n\
-                    \x20   Expected:\n\
-                    \n\
-                    \x20     {}\n\
-                    \n\
-                    \x20   Received:\n\
-                    \n\
-                    \x20     {}\n",
-                    Colour::Green.paint(&expectation.expected),
-                    Colour::Red.paint(&expectation.actual)
-                )
-            }
-            FailedExpectation::StdErr(ref expectation) => {
-                write!(
-                    f,
-                    "    Unexpected output on stderr.\n\
-                    \n\
-                    \x20   Expected:\n\
-                    \n\
-                    \x20     {}\n\
-                    \n\
-                    \x20   Received:\n\
-                    \n\
-                    \x20     {}\n",
-                    Colour::Green.paint(&expectation.expected),
-                    Colour::Red.paint(&expectation.actual)
-                )
-            }
-            FailedExpectation::ExitCode(ref expectation) => {
-                write!(
-                    f,
-                    "    Unexpected exit code.\n\
-                    \n\
-                    \x20   Expected: {}\n\
-                    \n\
-                    \x20   Received: {}\n\n",
-                    Colour::Green.paint(expectation.expected.to_string()),
-                    Colour::Red.paint(expectation.actual.to_string())
-                )
-            }
-        }
     }
 }
 
@@ -133,68 +72,13 @@ pub enum TestState {
     Failed,
 }
 
-pub enum ValidationError {
-    MissingExitCode,
-}
-
-impl fmt::Display for ValidationError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            ValidationError::MissingExitCode => {
-                write!(f, "expected output on stderr but no exit code specified.")
-            }
-        }
-    }
-}
-
-pub enum CliError {
-    Io(io::Error),
-    Yaml(serde_yaml::Error),
-    Utf8(string::FromUtf8Error),
-    Validation(ValidationError),
-}
-
-impl fmt::Display for CliError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Error: ")?;
-
-        match *self {
-            CliError::Io(ref err) => err.fmt(f),
-            CliError::Yaml(ref err) => err.fmt(f),
-            CliError::Utf8(ref err) => err.fmt(f),
-            CliError::Validation(ref err) => {
-                write!(f, "validation error: ")?;
-                err.fmt(f)
-            }
-        }
-    }
-}
-
-impl From<io::Error> for CliError {
-    fn from(err: io::Error) -> CliError {
-        CliError::Io(err)
-    }
-}
-
-impl From<serde_yaml::Error> for CliError {
-    fn from(err: serde_yaml::Error) -> CliError {
-        CliError::Yaml(err)
-    }
-}
-
-impl From<string::FromUtf8Error> for CliError {
-    fn from(err: string::FromUtf8Error) -> CliError {
-        CliError::Utf8(err)
-    }
-}
-
 // TODO:
 // - Add tests
 // - Before/after each/all hooks
 // - Verify that test names are unique
 // - Verify that expectations are valid
 
-pub fn run(filename: String) -> Result<TestState, CliError> {
+pub fn run(filename: String) -> Result<TestState, errors::CliError> {
     let tests = parse(&filename)?;
 
     // TODO: validate that test names are unique
@@ -218,7 +102,7 @@ pub fn run(filename: String) -> Result<TestState, CliError> {
     }
 }
 
-fn parse(filename: &str) -> Result<Vec<Test>, CliError> {
+fn parse(filename: &str) -> Result<Vec<Test>, errors::CliError> {
     let contents = fs::read_to_string(filename)?;
     let tests: Vec<Test> = serde_yaml::from_str(&contents)?;
 
@@ -229,14 +113,14 @@ fn run_test(
     test: Test,
     test_counts: &mut TestCounts,
     failures: &mut Vec<Failure>,
-) -> Result<(), CliError> {
+) -> Result<(), errors::CliError> {
     let output = Command::new("bash").arg("-c").arg(&test.input).output()?;
 
     // TODO: make this a failure for the individual test rather than causing all
     // tests to crash.
     validate_test(&test)?;
 
-    let failed_expectations = verify_expectations(&test, output)?;
+    let failed_expectations = expectations::verify_expectations(&test, output)?;
 
     if failed_expectations.len() == 0 {
         report_test_passed();
@@ -255,81 +139,16 @@ fn run_test(
     Ok(())
 }
 
-fn verify_expectations(
-    test: &Test,
-    output: std::process::Output,
-) -> Result<Vec<FailedExpectation>, CliError> {
-    let mut failed_expectations: Vec<FailedExpectation> = Vec::new();
-
-    let stdout = String::from_utf8(output.stdout)?;
-    let stderr = String::from_utf8(output.stderr)?;
-    // TODO: remove unwrap;
-    let exit_code = output.status.code().unwrap();
-
-    if let Some(failed_expectation) = verify_stdout(&test, &stdout) {
-        failed_expectations.push(failed_expectation);
-    }
-
-    if let Some(failed_expectation) = verify_stderr(&test, &stderr) {
-        failed_expectations.push(failed_expectation);
-    }
-
-    if let Some(failed_expectation) = verify_exit_code(&test, exit_code) {
-        failed_expectations.push(failed_expectation);
-    }
-
-    return Ok(failed_expectations);
-}
-
-fn verify_stdout(test: &Test, stdout: &str) -> Option<FailedExpectation> {
-    if let Some(expected_out) = &test.out {
-        if stdout.ne(expected_out) {
-            return Some(FailedExpectation::StdOut(Expectation {
-                actual: stdout.to_string(),
-                expected: expected_out.to_string(),
-            }));
-        }
-    }
-
-    return None;
-}
-
-fn verify_stderr(test: &Test, stderr: &str) -> Option<FailedExpectation> {
-    // TODO: get expected stderr
-    if let Some(expected_err) = &test.err {
-        if stderr.ne(expected_err) {
-            return Some(FailedExpectation::StdErr(Expectation {
-                actual: stderr.to_string(),
-                expected: expected_err.to_string(),
-            }));
-        }
-    }
-
-    return None;
-}
-
-fn verify_exit_code(test: &Test, exit_code: i32) -> Option<FailedExpectation> {
-    // TODO: get expected exit code
-    if let Some(expected_exit) = test.exit_code {
-        if expected_exit != exit_code {
-            return Some(FailedExpectation::ExitCode(Expectation {
-                actual: exit_code,
-                expected: expected_exit,
-            }));
-        }
-    }
-
-    return None;
-}
-
 // TODO: move this into verify_exit_code instead
-fn validate_test(test: &Test) -> Result<(), CliError> {
+fn validate_test(test: &Test) -> Result<(), errors::CliError> {
     match test {
         Test {
             err: Some(_),
             exit_code: None,
             ..
-        } => Err(CliError::Validation(ValidationError::MissingExitCode)),
+        } => Err(errors::CliError::Validation(
+            errors::ValidationError::MissingExitCode,
+        )),
         _ => Ok(()),
     }
 }
