@@ -31,3 +31,10 @@
   err: |
     different error
   exit_code: 1
+- test: Just a name
+  in: echo "hi"
+- test: another stderr passing
+  in: ">&2 echo \"error\" && exit 1"
+  err: |
+    error
+  exit_code: 1
