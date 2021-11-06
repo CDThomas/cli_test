@@ -13,6 +13,7 @@ pub enum FailedExpectation {
     StdOut(Expectation<String>),
     StdErr(Expectation<String>),
     ExitCode(Expectation<i32>),
+    MissingExitCode,
 }
 
 impl fmt::Display for FailedExpectation {
@@ -62,6 +63,9 @@ impl fmt::Display for FailedExpectation {
                     Colour::Red.paint(expectation.actual.to_string())
                 )
             }
+            FailedExpectation::MissingExitCode => {
+                write!(f, "    No exit code received.")
+            }
         }
     }
 }
@@ -74,8 +78,7 @@ pub fn verify_expectations(
 
     let stdout = String::from_utf8(output.stdout)?;
     let stderr = String::from_utf8(output.stderr)?;
-    // TODO: remove unwrap;
-    let exit_code = output.status.code().unwrap();
+    let exit_code = output.status.code();
 
     if let Some(failed_expectation) = verify_stdout(&test, &stdout) {
         failed_expectations.push(failed_expectation);
@@ -93,42 +96,38 @@ pub fn verify_expectations(
 }
 
 fn verify_stdout(test: &super::Test, stdout: &str) -> Option<FailedExpectation> {
-    if let Some(expected_out) = &test.out {
-        if stdout.ne(expected_out) {
-            return Some(FailedExpectation::StdOut(Expectation {
+    match &test.out {
+        Some(expected_out) if stdout.ne(expected_out) => {
+            Some(FailedExpectation::StdOut(Expectation {
                 actual: stdout.to_string(),
                 expected: expected_out.to_string(),
-            }));
+            }))
         }
+        _ => None,
     }
-
-    return None;
 }
 
 fn verify_stderr(test: &super::Test, stderr: &str) -> Option<FailedExpectation> {
-    // TODO: get expected stderr
-    if let Some(expected_err) = &test.err {
-        if stderr.ne(expected_err) {
-            return Some(FailedExpectation::StdErr(Expectation {
+    match &test.err {
+        Some(expected_err) if stderr.ne(expected_err) => {
+            Some(FailedExpectation::StdErr(Expectation {
                 actual: stderr.to_string(),
                 expected: expected_err.to_string(),
-            }));
+            }))
         }
+        _ => None,
     }
-
-    return None;
 }
 
-fn verify_exit_code(test: &super::Test, exit_code: i32) -> Option<FailedExpectation> {
-    // TODO: get expected exit code
-    if let Some(expected_exit) = test.exit_code {
-        if expected_exit != exit_code {
-            return Some(FailedExpectation::ExitCode(Expectation {
+fn verify_exit_code(test: &super::Test, exit_code: Option<i32>) -> Option<FailedExpectation> {
+    match (test.exit_code, exit_code) {
+        (Some(expected_exit_code), Some(exit_code)) if exit_code != expected_exit_code => {
+            Some(FailedExpectation::ExitCode(Expectation {
                 actual: exit_code,
-                expected: expected_exit,
-            }));
+                expected: expected_exit_code,
+            }))
         }
+        (_, None) => Some(FailedExpectation::MissingExitCode),
+        _ => None,
     }
-
-    return None;
 }

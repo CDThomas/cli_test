@@ -3,14 +3,18 @@ use std::io;
 use std::string;
 
 pub enum ValidationError {
-    MissingExitCode,
+    DuplicateTestName(String),
 }
 
 impl fmt::Display for ValidationError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            ValidationError::MissingExitCode => {
-                write!(f, "expected output on stderr but no exit code specified.")
+            ValidationError::DuplicateTestName(ref name) => {
+                write!(
+                    f,
+                    "Received duplicate test name \"{}\". Test names must be unique.",
+                    name
+                )
             }
         }
     }

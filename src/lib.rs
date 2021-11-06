@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fmt;
 use std::fs;
 use std::process::Command;
@@ -55,14 +56,15 @@ impl fmt::Display for TestCounts {
         let failed_text = Colour::Red.paint(format!("{} failed", self.failed));
         let total_text = format!("{} total", self.passed + self.failed);
 
-        if self.failed > 0 {
-            writeln!(
-                f,
-                "{} {}, {}, {}",
-                label_text, passed_text, failed_text, total_text
-            )
-        } else {
-            writeln!(f, "{} {}, {}", label_text, passed_text, total_text)
+        match self.failed {
+            0 => writeln!(f, "{} {}, {}", label_text, passed_text, total_text),
+            _ => {
+                writeln!(
+                    f,
+                    "{} {}, {}, {}",
+                    label_text, passed_text, failed_text, total_text
+                )
+            }
         }
     }
 }
@@ -75,13 +77,9 @@ pub enum TestState {
 // TODO:
 // - Add tests
 // - Before/after each/all hooks
-// - Verify that test names are unique
-// - Verify that expectations are valid
 
 pub fn run(filename: String) -> Result<TestState, errors::CliError> {
     let tests = parse(&filename)?;
-
-    // TODO: validate that test names are unique
 
     let mut test_counts = TestCounts {
         passed: 0,
@@ -89,6 +87,8 @@ pub fn run(filename: String) -> Result<TestState, errors::CliError> {
     };
 
     let mut failures: Vec<Failure> = Vec::new();
+
+    validate_tests(&tests)?;
 
     for test in tests {
         run_test(test, &mut test_counts, &mut failures)?;
@@ -109,16 +109,27 @@ fn parse(filename: &str) -> Result<Vec<Test>, errors::CliError> {
     Ok(tests)
 }
 
+fn validate_tests(tests: &Vec<Test>) -> Result<(), errors::CliError> {
+    let mut test_names: HashSet<String> = HashSet::new();
+
+    for test in tests {
+        let is_new = test_names.insert(test.name.clone());
+        if !is_new {
+            return Err(errors::CliError::Validation(
+                errors::ValidationError::DuplicateTestName(test.name.clone()),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 fn run_test(
     test: Test,
     test_counts: &mut TestCounts,
     failures: &mut Vec<Failure>,
 ) -> Result<(), errors::CliError> {
     let output = Command::new("bash").arg("-c").arg(&test.input).output()?;
-
-    // TODO: make this a failure for the individual test rather than causing all
-    // tests to crash.
-    validate_test(&test)?;
 
     let failed_expectations = expectations::verify_expectations(&test, output)?;
 
@@ -137,20 +148,6 @@ fn run_test(
     }
 
     Ok(())
-}
-
-// TODO: move this into verify_exit_code instead
-fn validate_test(test: &Test) -> Result<(), errors::CliError> {
-    match test {
-        Test {
-            err: Some(_),
-            exit_code: None,
-            ..
-        } => Err(errors::CliError::Validation(
-            errors::ValidationError::MissingExitCode,
-        )),
-        _ => Ok(()),
-    }
 }
 
 fn report_test_passed() {

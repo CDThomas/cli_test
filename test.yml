@@ -26,3 +26,8 @@
   err: |
     different error
   exit_code: 0
+- test: stderr and exit code failing
+  in: ">&2 echo \"error\""
+  err: |
+    different error
+  exit_code: 1
