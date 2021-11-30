@@ -74,12 +74,8 @@ pub enum TestState {
     Failed,
 }
 
-// TODO:
-// - Add tests
-// - Before/after each/all hooks
-
-pub fn run(filename: String) -> Result<TestState, errors::CliError> {
-    let tests = parse(&filename)?;
+pub fn run(filename: &str) -> Result<TestState, errors::CliError> {
+    let tests = parse(filename)?;
 
     let mut test_counts = TestCounts {
         passed: 0,

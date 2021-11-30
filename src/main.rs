@@ -1,15 +1,18 @@
-use std::env;
+use clap::{App, Arg};
 use std::process;
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
+    let matches = App::new("CLI Test")
+        .version("0.1.0")
+        .about("A tiny test framework for CLIs")
+        .arg(
+            Arg::with_name("file")
+                .required(true)
+                .help("The test file to run"),
+        )
+        .get_matches();
 
-    if args.len() < 2 {
-        eprintln!("Not enough arguments");
-        process::exit(1);
-    }
-
-    let filename = args[1].clone();
+    let filename = matches.value_of("file").unwrap();
 
     match cli_test::run(filename) {
         Ok(cli_test::TestState::Passed) => (),
@@ -20,4 +23,3 @@ fn main() {
         }
     }
 }
-
