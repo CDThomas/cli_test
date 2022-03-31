@@ -39,7 +39,7 @@ impl fmt::Display for Failure {
             expectation.fmt(f)?;
         }
 
-        return Ok(());
+        Ok(())
     }
 }
 
@@ -105,7 +105,7 @@ fn parse(filename: &str) -> Result<Vec<Test>, errors::CliError> {
     Ok(tests)
 }
 
-fn validate_tests(tests: &Vec<Test>) -> Result<(), errors::CliError> {
+fn validate_tests(tests: &[Test]) -> Result<(), errors::CliError> {
     let mut test_names: HashSet<String> = HashSet::new();
 
     for test in tests {
@@ -129,7 +129,7 @@ fn run_test(
 
     let failed_expectations = expectations::verify_expectations(&test, output)?;
 
-    if failed_expectations.len() == 0 {
+    if failed_expectations.is_empty() {
         report_test_passed();
         test_counts.passed += 1;
     } else {
@@ -154,10 +154,10 @@ fn report_test_failed() {
     print!("{}", Colour::Red.paint("F"));
 }
 
-fn report_summary(test_counts: &TestCounts, failures: &Vec<Failure>) {
+fn report_summary(test_counts: &TestCounts, failures: &[Failure]) {
     print!("\n\n{}", test_counts);
 
-    if failures.len() > 0 {
+    if !failures.is_empty() {
         print!("\n{}\n\n", Style::new().bold().paint("Failures:"));
 
         for failure in failures.iter() {

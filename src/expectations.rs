@@ -80,19 +80,19 @@ pub fn verify_expectations(
     let stderr = String::from_utf8(output.stderr)?;
     let exit_code = output.status.code();
 
-    if let Some(failed_expectation) = verify_stdout(&test, &stdout) {
+    if let Some(failed_expectation) = verify_stdout(test, &stdout) {
         failed_expectations.push(failed_expectation);
     }
 
-    if let Some(failed_expectation) = verify_stderr(&test, &stderr) {
+    if let Some(failed_expectation) = verify_stderr(test, &stderr) {
         failed_expectations.push(failed_expectation);
     }
 
-    if let Some(failed_expectation) = verify_exit_code(&test, exit_code) {
+    if let Some(failed_expectation) = verify_exit_code(test, exit_code) {
         failed_expectations.push(failed_expectation);
     }
 
-    return Ok(failed_expectations);
+    Ok(failed_expectations)
 }
 
 fn verify_stdout(test: &super::Test, stdout: &str) -> Option<FailedExpectation> {
